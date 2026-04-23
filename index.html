@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TBD Card Game</title>
+    <style>
+        body { 
+            font-family: sans-serif; 
+            background: #1a1a1a; 
+            color: #ddd; 
+            text-align: center; 
+            margin: 0; 
+            padding: 10px; 
+            user-select: none;
+        }
+        .top-row { 
+            display: flex; 
+            justify-content: center; 
+            gap: 8px; 
+            margin-bottom: 20px; 
+        }
+        .slot { 
+            width: 50px; 
+            height: 70px; 
+            border: 2px solid #444; 
+            border-radius: 4px; 
+            background: #111; 
+            box-sizing: border-box; 
+            cursor: pointer;
+        }
+        
+        .cascade-container { 
+            display: grid; 
+            grid-template-columns: repeat(8, 52px); 
+            gap: 10px; 
+            justify-content: center; 
+            align-items: start; 
+        }
+        
+        .col { 
+            display: flex; 
+            flex-direction: column; 
+            min-height: 500px; 
+        }
+        
+        .card-wrapper { 
+            text-decoration: none; 
+            color: inherit; 
+            display: block; 
+            position: relative;
+            cursor: pointer;
+        }
+
+        .col .card-wrapper:not(:first-child) { 
+            margin-top: -40px; 
+        }
+
+        .card { 
+            width: 48px; 
+            height: 68px; 
+            border: 1px solid #555; 
+            background: #222; 
+            font-weight: bold; 
+            border-radius: 4px; 
+            font-size: 13px; 
+            box-sizing: border-box; 
+            display: flex; 
+            align-items: flex-start; 
+            justify-content: center;
+            padding-top: 5px; 
+            box-shadow: 0 -2px 4px rgba(0,0,0,0.6);
+            pointer-events: none; /* Let the wrapper handle clicks */
+        }
+
+        .R { color: #ff4d4d; border-color: #ff4d4d; } 
+        .G { color: #2ecc71; border-color: #2ecc71; } 
+        .B { color: #3498db; border-color: #3498db; } 
+        .FL { color: #f368e0; border-color: #f368e0; }
+        
+        .selected { 
+            border: 2px solid #f1c40f !important; 
+            background: #443 !important; 
+            z-index: 50; 
+            box-shadow: 0 0 10px #f1c40f;
+        }
+
+        .clear-btn { 
+            background: #222; 
+            border: 1px solid #444; 
+            color: #aaa; 
+            margin: 5px; 
+            padding: 5px 10px; 
+            display: inline-block; 
+            text-decoration: none; 
+            border-radius: 3px; 
+            font-size: 11px; 
+            cursor: pointer;
+        }
+        .clear-btn:hover:not(.disabled) { background: #333; color: #fff; }
+        .clear-btn.disabled { opacity: 0.3; cursor: default; }
+        .empty-col { 
+            width: 48px; 
+            height: 68px; 
+            border: 1px dashed #444; 
+            border-radius: 4px; 
+            opacity: 0.3; 
+            margin-top: 0 !important; 
+        }
+        h3 { margin: 10px 0; }
+    </style>
+</head>
+<body>
+
+    <h3>TBD</h3>
+
+    <div class="top-row" id="top-row">
+        <!-- Free cells, Flower, Foundations -->
+    </div>
+
+    <div class="cascade-container" id="cascade-container">
+        <!-- Cascades -->
+    </div>
+
+    <div style="margin-top:20px;" id="controls">
+        <!-- Dragon buttons, Cancel, New Game -->
+    </div>
+
+    <script>
+        let state = {
+            cascades: Array(8).fill().map(() => []),
+            free: Array(3).fill(""),
+            foundations: Array(3).fill().map(() => []),
+            flower: "",
+            dragons: { R: false, G: false, B: false }
+        };
+
+        let selection = {
+            type: null, // 'cascade', 'free'
+            index: null,
+            depth: 0
+        };
+
+        const colors = ['R', 'G', 'B'];
+        const foundationColors = { 0: 'R', 1: 'G', 2: 'B' };
+        const homeHexColors = ['#ff4d4d', '#2ecc71', '#3498db'];
+
+        function isNumericCard(card) {
+            if (!card || card === "FL") return false;
+            return !isNaN(parseInt(card.slice(0, -1)));
+        }
+
+        function getCardValue(card) {
+            return parseInt(card.slice(0, -1));
+        }
+
+        function getCardColor(card) {
+            return card === "FL" ? "FL" : card.slice(-1);
+        }
+
+        function isValidStack(cards) {
+            if (cards.length <= 1) return true;
+            for (let i = 0; i < cards.length - 1; i++) {
+                const c1 = cards[i];
+                const c2 = cards[i+1];
+                if (!isNumericCard(c1) || !isNumericCard(c2)) return false;
+                if (getCardValue(c2) !== getCardValue(c1) - 1 || getCardColor(c1) === getCardColor(c2)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        function newGame() {
+            let deck = [];
+            colors.forEach(c => {
+                for (let n = 1; n <= 9; n++) deck.push(`${n}${c}`);
+                for (let d = 0; d < 4; d++) deck.push(`D${c}`);
+            });
+            deck.push("FL");
+
+            // Fisher-Yates
+            for (let i = deck.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [deck[i], deck[j]] = [deck[j], deck[i]];
+            }
+
+            state = {
+                cascades: Array(8).fill().map(() => []),
+                free: Array(3).fill(""),
+                foundations: Array(3).fill().map(() => []),
+                flower: "",
+                dragons: { R: false, G: false, B: false }
+            };
+
+            deck.forEach((card, i) => {
+                state.cascades[i % 8].push(card);
+            });
+
+            checkAutoMoves();
+            render();
+        }
+
+        function checkAutoMoves() {
+            let changed = false;
+            state.cascades.forEach((col, i) => {
+                if (col[col.length - 1] === "FL") {
+                    state.flower = "FL";
+                    col.pop();
+                    changed = true;
+                }
+            });
+            if (changed) checkAutoMoves();
+        }
+
+        function selectCard(type, index, depth = 0) {
+            if (selection.type === type && selection.index === index && selection.depth === depth) {
+                selection = { type: null, index: null, depth: 0 };
+            } else if (selection.type === null) {
+                if (type === 'cascade') {
+                    const col = state.cascades[index];
+                    const stack = col.slice(col.length - 1 - depth);
+                    if (isValidStack(stack)) {
+                        selection = { type, index, depth };
+                    }
+                } else if (type === 'free' && state.free[index]) {
+                    selection = { type, index, depth: 0 };
+                }
+            } else {
+                handleMove(type, index);
+            }
+            render();
+        }
+
+        function handleMove(toType, toIndex) {
+            let movingCards = [];
+            if (selection.type === 'cascade') {
+                movingCards = state.cascades[selection.index].splice(state.cascades[selection.index].length - 1 - selection.depth);
+            } else if (selection.type === 'free') {
+                movingCards = [state.free[selection.index]];
+                state.free[selection.index] = "";
+            }
+
+            let success = false;
+            const card = movingCards[0];
+
+            if (toType === 'cascade') {
+                const targetCol = state.cascades[toIndex];
+                const targetCard = targetCol[targetCol.length - 1];
+                let canPlace = false;
+                if (!targetCard) {
+                    canPlace = true;
+                } else if (isNumericCard(targetCard) && isNumericCard(card)) {
+                    if (getCardValue(card) === getCardValue(targetCard) - 1 && getCardColor(card) !== getCardColor(targetCard)) {
+                        canPlace = true;
+                    }
+                }
+                if (canPlace) {
+                    state.cascades[toIndex].push(...movingCards);
+                    success = true;
+                }
+            } else if (toType === 'free' && movingCards.length === 1 && !state.free[toIndex]) {
+                state.free[toIndex] = movingCards[0];
+                success = true;
+            } else if (toType === 'foundation' && movingCards.length === 1) {
+                const fColor = foundationColors[toIndex];
+                const last = state.foundations[toIndex][state.foundations[toIndex].length - 1];
+                if (isNumericCard(card) && getCardColor(card) === fColor) {
+                    const val = getCardValue(card);
+                    if ((val === 1 && !last) || (last && val === getCardValue(last) + 1)) {
+                        state.foundations[toIndex].push(card);
+                        success = true;
+                    }
+                }
+            }
+
+            if (!success) {
+                if (selection.type === 'cascade') {
+                    state.cascades[selection.index].push(...movingCards);
+                } else {
+                    state.free[selection.index] = movingCards[0];
+                }
+            }
+
+            selection = { type: null, index: null, depth: 0 };
+            checkAutoMoves();
+        }
+
+        function clearDragons(color) {
+            if (state.dragons[color]) return;
+            let found = [];
+            state.free.forEach((c, i) => { if (c === `D${color}`) found.push({type: 'free', index: i}); });
+            state.cascades.forEach((col, i) => { if (col[col.length - 1] === `D${color}`) found.push({type: 'cascade', index: i}); });
+
+            if (found.length === 4) {
+                found.forEach(f => {
+                    if (f.type === 'free') state.free[f.index] = "";
+                    else state.cascades[f.index].pop();
+                });
+                state.dragons[color] = true;
+                checkAutoMoves();
+                render();
+            }
+        }
+
+        function renderCard(card, isSelected) {
+            if (!card) return "";
+            const colorClass = getCardColor(card);
+            const selClass = isSelected ? "selected" : "";
+            return `<div class="card ${colorClass} ${selClass}">${card}</div>`;
+        }
+
+        function render() {
+            const topRow = document.getElementById('top-row');
+            topRow.innerHTML = "";
+            
+            for (let i = 0; i < 3; i++) {
+                const isSel = selection.type === 'free' && selection.index === i;
+                const slot = document.createElement('div');
+                slot.className = 'slot';
+                slot.onclick = () => selectCard('free', i);
+                slot.innerHTML = renderCard(state.free[i], isSel);
+                topRow.appendChild(slot);
+            }
+
+            // Flower slot
+            const flowerSlot = document.createElement('div');
+            flowerSlot.className = 'slot';
+            flowerSlot.style.borderColor = '#f368e0';
+            flowerSlot.innerHTML = renderCard(state.flower, false);
+            topRow.appendChild(flowerSlot);
+
+            // Spacer
+            const spacer = document.createElement('div');
+            spacer.style.width = '20px';
+            topRow.appendChild(spacer);
+
+            for (let i = 0; i < 3; i++) {
+                const slot = document.createElement('div');
+                slot.className = 'slot';
+                slot.style.borderColor = homeHexColors[i];
+                slot.style.borderStyle = 'dashed';
+                slot.onclick = () => selectCard('foundation', i);
+                const last = state.foundations[i][state.foundations[i].length - 1];
+                slot.innerHTML = renderCard(last, false);
+                topRow.appendChild(slot);
+            }
+
+            const container = document.getElementById('cascade-container');
+            container.innerHTML = "";
+            for (let i = 0; i < 8; i++) {
+                const colDiv = document.createElement('div');
+                colDiv.className = 'col';
+                const col = state.cascades[i];
+                
+                if (col.length === 0) {
+                    const empty = document.createElement('div');
+                    empty.className = 'card-wrapper';
+                    empty.onclick = () => selectCard('cascade', i);
+                    empty.innerHTML = `<div class="empty-col"></div>`;
+                    colDiv.appendChild(empty);
+                } else {
+                    col.forEach((card, j) => {
+                        const depth = col.length - 1 - j;
+                        const isSel = selection.type === 'cascade' && selection.index === i && depth <= selection.depth;
+                        const wrapper = document.createElement('div');
+                        wrapper.className = 'card-wrapper';
+                        wrapper.onclick = (e) => {
+                            e.stopPropagation();
+                            selectCard('cascade', i, depth);
+                        };
+                        wrapper.innerHTML = renderCard(card, isSel);
+                        colDiv.appendChild(wrapper);
+                    });
+                }
+                container.appendChild(colDiv);
+            }
+
+            const controls = document.getElementById('controls');
+            controls.innerHTML = "";
+            colors.forEach(c => {
+                const btn = document.createElement('a');
+                btn.className = 'clear-btn' + (state.dragons[c] ? ' disabled' : '');
+                btn.innerText = state.dragons[c] ? `${c} OK` : `CLEAR ${c}`;
+                if (!state.dragons[c]) btn.onclick = () => clearDragons(c);
+                controls.appendChild(btn);
+            });
+
+            if (selection.type !== null) {
+                const cancel = document.createElement('a');
+                cancel.className = 'clear-btn';
+                cancel.style.borderColor = '#f39c12';
+                cancel.style.color = '#f39c12';
+                cancel.innerText = 'CANCEL';
+                cancel.onclick = () => { selection = {type: null, index: null, depth: 0}; render(); };
+                controls.appendChild(cancel);
+            }
+
+            const newGameBtn = document.createElement('a');
+            newGameBtn.className = 'clear-btn';
+            newGameBtn.innerText = 'NEW GAME';
+            newGameBtn.onclick = newGame;
+            controls.appendChild(newGameBtn);
+        }
+        newGame();
+    </script>
+</body>
+</html>
