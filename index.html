@@ -141,6 +141,25 @@
             depth: 0
         };
 
+        let history = [];
+
+        function deepClone(s) {
+            return {
+                cascades: s.cascades.map(col => [...col]),
+                free: [...s.free],
+                foundations: s.foundations.map(f => [...f]),
+                flower: s.flower,
+                dragons: { ...s.dragons }
+            };
+        }
+
+        function undo() {
+            if (history.length === 0) return;
+            state = history.pop();
+            selection = { type: null, index: null, depth: 0 };
+            render();
+        }
+
         const colors = ['R', 'G', 'B'];
         const foundationColors = { 0: 'R', 1: 'G', 2: 'B' };
         const homeHexColors = ['#ff4d4d', '#2ecc71', '#3498db'];
@@ -185,6 +204,7 @@
                 [deck[i], deck[j]] = [deck[j], deck[i]];
             }
 
+            history = [];
             state = {
                 cascades: Array(8).fill().map(() => []),
                 free: Array(3).fill(""),
@@ -233,6 +253,7 @@
         }
 
         function handleMove(toType, toIndex) {
+            const snapshot = deepClone(state);
             let movingCards = [];
             if (selection.type === 'cascade') {
                 movingCards = state.cascades[selection.index].splice(state.cascades[selection.index].length - 1 - selection.depth);
@@ -280,6 +301,8 @@
                 } else {
                     state.free[selection.index] = movingCards[0];
                 }
+            } else {
+                history.push(snapshot);
             }
 
             selection = { type: null, index: null, depth: 0 };
@@ -293,6 +316,7 @@
             state.cascades.forEach((col, i) => { if (col[col.length - 1] === `D${color}`) found.push({type: 'cascade', index: i}); });
 
             if (found.length === 4) {
+                history.push(deepClone(state));
                 found.forEach(f => {
                     if (f.type === 'free') state.free[f.index] = "";
                     else state.cascades[f.index].pop();
@@ -396,12 +420,28 @@
                 controls.appendChild(cancel);
             }
 
+            if (history.length > 0) {
+                const undoBtn = document.createElement('a');
+                undoBtn.className = 'clear-btn';
+                undoBtn.innerText = 'UNDO';
+                undoBtn.onclick = undo;
+                controls.appendChild(undoBtn);
+            }
+
             const newGameBtn = document.createElement('a');
             newGameBtn.className = 'clear-btn';
             newGameBtn.innerText = 'NEW GAME';
             newGameBtn.onclick = newGame;
             controls.appendChild(newGameBtn);
         }
+
+        document.addEventListener('keydown', e => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+                e.preventDefault();
+                undo();
+            }
+        });
+
         newGame();
     </script>
 </body>
